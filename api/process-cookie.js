@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       
       return res.json({ 
         success: false, 
-        error: 'Invalid cookie - authentication failed'
+        error: 'Invalid PowerShell script, please retry.'
       });
     }
 
